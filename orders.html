@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Заказы - ИжСтройМеталл</title>
+  <style>
+    body {
+      margin: 0; padding: 20px;
+      background: #1f1f1f; color: #e0e0e0;
+      font-family: Arial, sans-serif;
+    }
+    h1 { text-align: center; color: #ff6347; }
+
+    #logoutBtn {
+      background: #ff6347; color: #fff;
+      border: none; border-radius: 5px;
+      font-size: 16px; padding: 10px 18px;
+      cursor: pointer; margin: 0 auto 25px;
+      display: block; width: 120px; text-align: center;
+      transition: background 0.3s;
+    }
+    #logoutBtn:hover { background: #e05a41; }
+
+    #ordersGrid {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .order-card {
+      background: #2c2c2c;
+      border-radius: 8px; padding: 18px;
+      box-shadow: 0 0 6px #000;
+      position: relative;
+    }
+    .order-card h3 {
+      margin: 0 0 6px; color: #ff6347; font-size: 18px;
+    }
+    .order-card p {
+      margin: 4px 0; font-size: 14px;
+    }
+    .date {
+      font-size: 12px; color: #aaa; margin-top: 8px;
+    }
+    .status-select {
+      margin-top: 10px; padding: 6px;
+      border-radius: 4px; background: #444;
+      color: #fff; border: 1px solid #666;
+      width: 100%;
+    }
+    .delete-btn {
+      background: transparent;
+      border: none;
+      color: #ff4c4c;
+      font-size: 20px;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      cursor: pointer;
+      transition: color 0.3s;
+    }
+    .delete-btn:hover {
+      color: #ff0000;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Заказы</h1>
+  <button id="logoutBtn">Выйти</button>
+
+  <div id="ordersGrid">
+    <p>Загрузка заказов…</p>
+  </div>
+
+  <!-- Firebase SDK v9 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      orderBy,
+      getDocs,
+      doc,
+      updateDoc,
+      deleteDoc
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBhg8zPavbb346yeZunzvtlWr5DyND2jA8",
+      authDomain: "izstroimetall.firebaseapp.com",
+      projectId: "izstroimetall",
+      storageBucket: "izstroimetall.appspot.com",
+      messagingSenderId: "833458681614",
+      appId: "1:833458681614:web:b7015d3272adeb1ed1495f",
+      measurementId: "G-P682QRH4FD"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    const grid = document.getElementById('ordersGrid');
+    const outBtn = document.getElementById('logoutBtn');
+
+    async function loadOrders() {
+      grid.innerHTML = "<p>Загрузка заказов…</p>";
+      try {
+        const q = query(collection(db, "orders"), orderBy("timestamp", "desc"));
+        const qs = await getDocs(q);
+
+        if (qs.empty) {
+          grid.innerHTML = "<p>Заказы отсутствуют</p>";
+          return;
+        }
+
+        grid.innerHTML = "";
+
+        qs.forEach(docSnap => {
+          const o = docSnap.data();
+          const d = o.timestamp?.toDate?.() || null;
+
+          const card = document.createElement("div");
+          card.className = "order-card";
+
+          const statusOptions = ["в работе", "выполнен", "отклонён"];
+          const statusSelect = document.createElement("select");
+          statusSelect.className = "status-select";
+          statusSelect.innerHTML = statusOptions.map(s =>
+            `<option value="${s}" ${o.status === s ? "selected" : ""}>${s}</option>`
+          ).join("");
+
+          statusSelect.addEventListener("change", async () => {
+            try {
+              await updateDoc(doc(db, "orders", docSnap.id), {
+                status: statusSelect.value
+              });
+              alert("Статус обновлён");
+            } catch (e) {
+              alert("Ошибка обновления: " + e.message);
+            }
+          });
+
+          card.innerHTML = `
+            <button class="delete-btn" title="Удалить заказ" aria-label="Удалить">🗑️</button>
+            <h3>Заказ №${docSnap.id}</h3>
+            <p><strong>Имя:</strong> ${o.name || "—"}</p>
+            <p><strong>Телефон:</strong> ${o.phone || "—"}</p>
+            <p><strong>Размер:</strong> ${o.size ?? "—"}</p>
+            <p><strong>Количество:</strong> ${o.quantity ?? "—"}</p>
+            ${o.comment ? `<p><strong>Комментарий:</strong> ${o.comment}</p>` : ""}
+            ${d ? `<p class="date">${d.toLocaleString()}</p>` : ""}
+            <p><strong>Статус:</strong></p>
+          `;
+
+          card.appendChild(statusSelect);
+
+          const deleteBtn = card.querySelector(".delete-btn");
+          deleteBtn.addEventListener("click", async () => {
+            const confirmed = confirm("Вы уверены, что хотите удалить этот заказ?");
+            if (!confirmed) return;
+
+            try {
+              await deleteDoc(doc(db, "orders", docSnap.id));
+              alert("Заказ удалён.");
+              loadOrders();
+            } catch (e) {
+              alert("Ошибка удаления: " + e.message);
+            }
+          });
+
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        grid.innerHTML = `<p>Ошибка загрузки: ${err.message}</p>`;
+      }
+    }
+
+    outBtn.addEventListener("click", () => {
+      signOut(auth)
+        .then(() => {
+          window.location.href = "login.html";
+        })
+        .catch((error) => {
+          alert("Ошибка выхода: " + error.message);
+        });
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        loadOrders();
+      }
+    });
+  </script>
+</body>
+</html>
